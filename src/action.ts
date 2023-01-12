@@ -1,16 +1,18 @@
-import { sep, join, resolve } from "path"
-import { readFileSync } from "fs"
-import { exec } from "@actions/exec"
 import * as core from "@actions/core"
+
+import { CoverageMapData, createCoverageMap } from "istanbul-lib-coverage"
 import { GitHub, context } from "@actions/github"
+import { join, resolve, sep } from "path"
+
+import type { FormattedTestResults } from "@jest/test-result/build/types"
 import type { Octokit } from "@octokit/rest"
-import flatMap from "lodash/flatMap"
+import { exec } from "@actions/exec"
 import filter from "lodash/filter"
+import flatMap from "lodash/flatMap"
 import map from "lodash/map"
+import { readFileSync } from "fs"
 import strip from "strip-ansi"
 import table from "markdown-table"
-import { createCoverageMap, CoverageMapData } from "istanbul-lib-coverage"
-import type { FormattedTestResults } from "@jest/test-result/build/types"
 
 const ACTION_NAME = "jest-github-action"
 const COVERAGE_HEADER = ":loop: **Code coverage**\n\n"
@@ -47,7 +49,11 @@ export async function run() {
     if (getPullId() && shouldCommentCoverage()) {
       const comment = getCoverageTable(results, CWD)
       if (comment) {
-        await deletePreviousComments(octokit)
+        try {
+          await deletePreviousComments(octokit)
+        } catch (error) {
+          console.warn("Fail to remove some comment. skip to next stage.", error);
+        }
         const commentPayload = getCommentPayload(comment)
         await octokit.issues.createComment(commentPayload)
       }
@@ -156,7 +162,11 @@ function getJestCommand(resultsFile: string) {
       ? "--changedSince=" + context.payload.pull_request?.base.ref
       : ""
   } --outputFile=${resultsFile}`
-  const shouldAddHyphen = cmd.startsWith("npm") || cmd.startsWith("npx") || cmd.startsWith("pnpm") || cmd.startsWith("pnpx")
+  const shouldAddHyphen =
+    cmd.startsWith("npm") ||
+    cmd.startsWith("npx") ||
+    cmd.startsWith("pnpm") ||
+    cmd.startsWith("pnpx")
   cmd += (shouldAddHyphen ? " -- " : " ") + jestOptions
   core.debug("Final test command: " + cmd)
   return cmd
