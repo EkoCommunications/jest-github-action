@@ -20,10 +20,10 @@ inputs:
     description: "Save code coverage to files"
     required: false
     default: "false"
-  coverage-results-file:
-    description: "Code coverage to file path"
+  output-type:
+    description: "Results output type (json, lcov, text, clover)"
     required: false
-    default: "coverage-results.json"
+    default: "json"
   changes-only:
     description: "Only run tests on changed files (over base branch)"
     required: false

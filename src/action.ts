@@ -10,7 +10,7 @@ import { exec } from "@actions/exec"
 import filter from "lodash/filter"
 import flatMap from "lodash/flatMap"
 import map from "lodash/map"
-import { readFileSync, writeFileSync } from "fs"
+import { readFileSync, mkdirSync } from "fs"
 import strip from "strip-ansi"
 import table from "markdown-table"
 
@@ -21,7 +21,8 @@ export async function run() {
   let workingDirectory = core.getInput("working-directory", { required: false })
   let cwd = workingDirectory ? resolve(workingDirectory) : process.cwd()
   const CWD = cwd + sep
-  const RESULTS_FILE = join(CWD, "jest.results.json")
+  const outputType = core.getInput("output-type", { required: false })
+  const RESULTS_FILE = join(CWD, 'coverage',`coverage-final.json`)
 
   try {
     const token = process.env.GITHUB_TOKEN
@@ -33,44 +34,49 @@ export async function run() {
 
     const cmd = getJestCommand(RESULTS_FILE)
 
-    await execJest(cmd, CWD)
+    // Run jest
+    const JestOutput = await execJest(cmd, CWD)
+
+    const lsCMDOutput = await exec("ls", ["-lR"], { silent: false, cwd: join(CWD, 'coverage') })
+    console.debug("List files in ./coverage: %j", lsCMDOutput)
 
     // octokit
     const octokit = new GitHub(token)
+    
+    if(outputType == 'json'){
+      // Parse results
+      const results = parseResults(RESULTS_FILE)
 
-    // Parse results
-    const results = parseResults(RESULTS_FILE)
+      // Checks
+      const checkPayload = getCheckPayload(results, CWD)
+      await octokit.checks.create(checkPayload)
 
-    // Write results to file
-    if(shouldSummitCoveragetoArtifact()){
-      const resultsFile = core.getInput("coverage-results-file", { required: false })
-      if (resultsFile) {
-        const resultsFilePath = join(CWD, resultsFile)
-        console.debug("Writing results to file: %s", resultsFilePath)
-        writeFileSync(resultsFilePath, JSON.stringify(results))
-      }
-    }
-
-    // Checks
-    const checkPayload = getCheckPayload(results, CWD)
-    await octokit.checks.create(checkPayload)
-
-    // Coverage comments
-    if (getPullId() && shouldCommentCoverage()) {
-      const comment = getCoverageTable(results, CWD)
-      if (comment) {
-        try {
-          await deletePreviousComments(octokit)
-        } catch (error) {
-          console.warn("Fail to remove some comment. skip to next stage.", error);
+      // Coverage comments
+      if (getPullId() && shouldCommentCoverage()) {
+        const comment = getCoverageTable(results, CWD)
+        if (comment) {
+          try {
+            await deletePreviousComments(octokit)
+          } catch (error) {
+            console.warn("Fail to remove some comment. skip to next stage.", error);
+          }
+          const commentPayload = getCommentPayload(comment)
+          await octokit.issues.createComment(commentPayload)
         }
-        const commentPayload = getCommentPayload(comment)
-        await octokit.issues.createComment(commentPayload)
       }
-    }
 
-    if (!results.success) {
-      core.setFailed("Some jest tests failed.")
+      if (!results.success) {
+        core.setFailed("Some jest tests failed.")
+      }
+    } else if(outputType == 'lcov'){
+      console.debug("lcov output")
+    } else if (outputType == 'clover'){      
+      console.debug("clover output")
+    } else if(outputType == 'text'){
+      console.debug("text output")
+      console.debug("Jest output: %j", JestOutput)
+    } else{
+      core.setFailed("Invalid output type.")
     }
   } catch (error) {
     console.error(error)
@@ -102,7 +108,7 @@ function shouldRunOnlyChangedFiles(): boolean {
   return Boolean(JSON.parse(core.getInput("changes-only", { required: false })))
 }
 
-function shouldSummitCoveragetoArtifact(): boolean {
+function shouldWriteCoverageArtifact(): boolean {
   return Boolean(JSON.parse(core.getInput("coverage-artifact-save", { required: false })))
 }
 
@@ -169,13 +175,16 @@ function getCheckPayload(results: FormattedTestResults, cwd: string) {
 
 function getJestCommand(resultsFile: string) {
   let cmd = core.getInput("test-command", { required: false })
-  const jestOptions = `--testLocationInResults --json ${
-    shouldCommentCoverage() || shouldSummitCoveragetoArtifact() ? "--coverage" : ""
+  let outputType = core.getInput("output-type", { required: false })
+  const jestOptions = `${outputType=='json'?'--testLocationInResults --json '
+  :'--coverageReporters="'+outputType+'" '
+  } ${
+    shouldCommentCoverage() || shouldWriteCoverageArtifact() ? "--coverage" : ""
   } ${
     shouldRunOnlyChangedFiles() && context.payload.pull_request?.base.ref
       ? "--changedSince=" + context.payload.pull_request?.base.ref
       : ""
-  } --outputFile=${resultsFile}`
+  } ${outputType == 'json'?"--outputFile=" + resultsFile:""}`
   const shouldAddHyphen =
     cmd.startsWith("npm") ||
     cmd.startsWith("npx") ||
@@ -194,8 +203,9 @@ function parseResults(resultsFile: string): FormattedTestResults {
 
 async function execJest(cmd: string, cwd?: string) {
   try {
-    await exec(cmd, [], { silent: true, cwd })
+    const output = await exec(cmd, [], { silent: true, cwd })
     console.debug("Jest command executed")
+    return output
   } catch (e) {
     console.error("Jest execution failed. Tests have likely failed.", e)
   }

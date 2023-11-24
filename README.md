@@ -63,7 +63,7 @@ uses: EkoCommunications/jest-github-action@v1.1
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 with:
-  # To avoid reporting code coverage, set this variable to false
+  # code coverage will be reported, when this parameter or coverage-artifact-save is true
   coverage-comment: false
 ```
 
@@ -79,6 +79,28 @@ with:
   working-directory: "frontend"
 ```
 
+### Saving code coverage results
+
+For saving tests, supply a coverage-artifact-save
+```yaml
+uses: EkoCommunications/jest-github-action@v1.1
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+with:
+  # code coverage will be reported, when this parameter or coverage-comment is true
+  coverage-artifact-save: true
+```
+
+### Enabling multiple outputs support
+
+For enabling multiple outputs/file types, supply multiple-outputs
+```yaml
+uses: EkoCommunications/jest-github-action@v1.1
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+with:
+  multiple-outputs: false
+```
 
 See the [actions tab](https://github.com/EkoCommunications/jest-github-action/actions) for runs of this action! :stars:
 
