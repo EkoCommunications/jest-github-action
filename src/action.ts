@@ -10,7 +10,7 @@ import { exec } from "@actions/exec"
 import filter from "lodash/filter"
 import flatMap from "lodash/flatMap"
 import map from "lodash/map"
-import { readFileSync } from "fs"
+import { readFileSync, writeFileSync } from "fs"
 import strip from "strip-ansi"
 import table from "markdown-table"
 
@@ -40,6 +40,16 @@ export async function run() {
 
     // Parse results
     const results = parseResults(RESULTS_FILE)
+
+    // Write results to file
+    if(shouldSummitCoveragetoArtifact()){
+      const resultsFile = core.getInput("coverage-results-file", { required: false })
+      if (resultsFile) {
+        const resultsFilePath = join(CWD, resultsFile)
+        console.debug("Writing results to file: %s", resultsFilePath)
+        writeFileSync(resultsFilePath, JSON.stringify(results))
+      }
+    }
 
     // Checks
     const checkPayload = getCheckPayload(results, CWD)
@@ -90,6 +100,10 @@ function shouldCommentCoverage(): boolean {
 
 function shouldRunOnlyChangedFiles(): boolean {
   return Boolean(JSON.parse(core.getInput("changes-only", { required: false })))
+}
+
+function shouldSummitCoveragetoArtifact(): boolean {
+  return Boolean(JSON.parse(core.getInput("coverage-artifact-save", { required: false })))
 }
 
 export function getCoverageTable(
@@ -156,7 +170,7 @@ function getCheckPayload(results: FormattedTestResults, cwd: string) {
 function getJestCommand(resultsFile: string) {
   let cmd = core.getInput("test-command", { required: false })
   const jestOptions = `--testLocationInResults --json ${
-    shouldCommentCoverage() ? "--coverage" : ""
+    shouldCommentCoverage() || shouldSummitCoveragetoArtifact() ? "--coverage" : ""
   } ${
     shouldRunOnlyChangedFiles() && context.payload.pull_request?.base.ref
       ? "--changedSince=" + context.payload.pull_request?.base.ref

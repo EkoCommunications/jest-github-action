@@ -16,6 +16,14 @@ inputs:
     description: "Comment PRs with code coverage"
     required: false
     default: "true"
+  coverage-artifact-save:
+    description: "Save code coverage to files"
+    required: false
+    default: "false"
+  coverage-results-file:
+    description: "Code coverage to file path"
+    required: false
+    default: "coverage-results.json"
   changes-only:
     description: "Only run tests on changed files (over base branch)"
     required: false
@@ -25,5 +33,5 @@ inputs:
     required: true
 
 runs:
-  using: "node12"
+  using: "node16"
   main: "dist/index.js"
